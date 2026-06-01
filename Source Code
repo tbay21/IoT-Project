@@ -1,0 +1,87 @@
+#define BLYNK_TEMPLATE_ID "TMPL6ngtsUdPv"
+#define BLYNK_TEMPLATE_NAME "Smart Parking"
+#define BLYNK_AUTH_TOKEN "g1EoICoxkAaGGZAZ_Tp1z1VT5teDNuiE"
+
+#include <WiFi.h>
+#include <BlynkSimpleEsp32.h>
+#include <LiquidCrystal_I2C.h>
+
+// Konfigurasi Pin Sensor — 6 slot
+const int trigPins[] = {27, 25, 12, 5, 16, 19};
+const int echoPins[] = {26, 33, 13, 18, 17, 23};
+const int vPins[]    = {V1, V2, V3, V4, V5, V6};
+
+// Batas jarak deteksi (dalam cm)
+const int batasJarak = 30;
+
+char auth[] = BLYNK_AUTH_TOKEN;
+char ssid[] = "Wokwi-GUEST";
+char pass[] = "";
+
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+BlynkTimer timer;
+
+// Fungsi baca jarak ultrasonik
+int bacaJarak(int trig, int echo) {
+  digitalWrite(trig, LOW);  delayMicroseconds(2);
+  digitalWrite(trig, HIGH); delayMicroseconds(10);
+  digitalWrite(trig, LOW);
+  long durasi = pulseIn(echo, HIGH);
+  int jarak = durasi * 0.034 / 2;
+  return (jarak == 0) ? 100 : jarak; // Jika 0 anggap jauh (out of range)
+}
+
+void updateParkingStatus() {
+  String baris1 = "S1:"; String baris2 = "S4:";
+
+  for (int i = 0; i < 6; i++) {
+    int jarak = bacaJarak(trigPins[i], echoPins[i]);
+
+    if (jarak < batasJarak) {
+      // SLOT TERISI
+      Blynk.virtualWrite(vPins[i], "OCCUPIED");
+      Blynk.setProperty(vPins[i], "color", "#D3435C"); // Warna Merah
+      if (i < 3) baris1 += "F "; else baris2 += "F "; // F = Full
+    } else {
+      // SLOT KOSONG
+      Blynk.virtualWrite(vPins[i], "AVALAIBLE");
+      Blynk.setProperty(vPins[i], "color", "#23C48E"); // Warna Hijau
+      if (i < 3) baris1 += "E "; else baris2 += "E "; // E = Empty
+    }
+
+    // Tambah label S2, S3 di baris 1 dan S5, S6 di baris 2
+    if (i == 0) baris1 += " S2:";
+    if (i == 1) baris1 += " S3:";
+    if (i == 3) baris2 += " S5:";
+    if (i == 4) baris2 += " S6:";
+  }
+
+  // Update LCD Lokal
+  lcd.setCursor(0, 0); lcd.print(baris1 + "   ");
+  lcd.setCursor(0, 1); lcd.print(baris2 + "   ");
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  for (int i = 0; i < 6; i++) {
+    pinMode(trigPins[i], OUTPUT);
+    pinMode(echoPins[i], INPUT);
+  }
+
+  lcd.init();
+  lcd.backlight();
+  lcd.print(" Smart Parking ");
+  delay(2000);
+  lcd.clear();
+
+  Blynk.begin(auth, ssid, pass);
+
+  // Cek sensor setiap 1 detik
+  timer.setInterval(1000L, updateParkingStatus);
+}
+
+void loop() {
+  Blynk.run();
+  timer.run();
+}
